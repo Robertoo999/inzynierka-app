@@ -548,7 +548,11 @@ function TaskStudent({ token, activity, onSubmitted }:{ token:string|null; activ
                 const low = raw.toLowerCase()
                 // Ignore typical "not found"/unauthorized cases on initial load
                 const benign = low.startsWith('404') || low.startsWith('401') || low.includes('not found') || low.includes('nie znaleziono') || low.includes('brak')
-                if (!benign) setStatus({ kind: 'error', text: normalizeError(raw) })
+                if (!benign) {
+                    const msg = normalizeError(raw)
+                    setInfoLine(msg)
+                    toast.show(msg, 'error')
+                }
                 if (active) setLatestSubmission(null)
             })
             .finally(() => { if (active) setLoadingLatest(false) })

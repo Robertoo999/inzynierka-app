@@ -66,10 +66,20 @@ const LessonEditorPage = React.forwardRef<LessonEditorHandle, { token:string; ro
     function findActivity(id?:string){ if (!detail) return null; return detail.activities.find(a=>a.id===id) ?? null }
 
     // Emituj zmianę aktywnego bloku, aby nadrzędny widok mógł zmienić etykietę zapisu
-    React.useEffect(()=>{
-        const a = findActivity(selectedId || (detail && detail.activities[0]?.id))
-        try { (window as any).dispatchEvent(new CustomEvent('lesson:active-changed', { detail: { type: a?.type || null, id: a?.id || null } })) } catch {}
+        // Emituj zmianę aktywnego bloku, aby nadrzędny widok mógł zmienić etykietę zapisu
+    React.useEffect(() => {
+        const fallbackId = detail?.activities?.[0]?.id
+        const currentId = selectedId ?? fallbackId
+        const a = findActivity(currentId)
+        try {
+            (window as any).dispatchEvent(
+                new CustomEvent('lesson:active-changed', {
+                    detail: { type: a?.type || null, id: a?.id || null }
+                })
+            )
+        } catch {}
     }, [selectedId, detail?.activities?.length])
+
 
     async function handleReorder(from:number, to:number){
         if (!detail) return
