@@ -362,7 +362,10 @@ function ContentView({ activity }:{ activity: LessonActivity }){
 
     // Render with preferred order: image → markdown → code, regardless of save order.
     const blocks = Array.isArray(body.blocks) ? body.blocks : []
-    const img = blocks.find((b:any)=> b && b.type === 'image')
+      type ImageBlock = { type: 'image'; src: string; alt?: string }
+    const img = blocks.find(
+        (b: any): b is ImageBlock => b && b.type === 'image'
+    )
     const texts = blocks.filter((b:any)=> b && b.type === 'markdown')
     const codes = blocks.filter((b:any)=> b && b.type === 'code')
 

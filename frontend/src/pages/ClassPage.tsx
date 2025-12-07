@@ -777,7 +777,11 @@ function ContentViewer({ activity }:{ activity: LessonActivity }) {
     if (!body || !body.blocks?.length) return <p className="text-muted">Brak treści.</p>
     // Prefer consistent order: image → markdown → code (labelled)
     const blocks = Array.isArray(body.blocks) ? body.blocks : []
-    const img = blocks.find((b:any)=> b && b.type === 'image')
+	
+	type ImageBlock = { type: 'image'; src: string; alt?: string }
+    const img = blocks.find(
+        (b: any): b is ImageBlock => b && b.type === 'image'
+    )
     const texts = blocks.filter((b:any)=> b && b.type === 'markdown')
     const codes = blocks.filter((b:any)=> b && b.type === 'code')
     const embeds = blocks.filter((b:any)=> b && b.type === 'embed')
