@@ -1,0 +1,5 @@
+ALTER TABLE tasks ADD COLUMN max_attempts INT NOT NULL DEFAULT 1;
+ALTER TABLE tasks ADD COLUMN allow_run_before_submit BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE tasks ADD COLUMN lock_after_submit BOOLEAN NOT NULL DEFAULT TRUE;
+
+ALTER TABLE submissions DROP CONSTRAINT IF EXISTS ux_submissions_task_student;

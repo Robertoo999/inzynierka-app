@@ -1,0 +1,28 @@
+{
+  "root": true,
+  "env": { "browser": true, "es2023": true, "node": false },
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": { "ecmaFeatures": { "jsx": true }, "sourceType": "module" },
+  "plugins": ["@typescript-eslint", "react", "react-hooks", "jsx-a11y"],
+  "extends": [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended",
+    "plugin:react/recommended",
+    "plugin:react-hooks/recommended",
+    "plugin:jsx-a11y/recommended"
+  ],
+  "settings": { "react": { "version": "detect" } },
+  "rules": {
+    // Accessibility: keep these on to prevent regressions
+    "jsx-a11y/alt-text": "warn",
+    "jsx-a11y/anchor-is-valid": "warn",
+    "jsx-a11y/aria-props": "warn",
+    "jsx-a11y/no-static-element-interactions": "off", // allow with role + handlers when intentional
+    "jsx-a11y/click-events-have-key-events": "warn",
+    "jsx-a11y/interactive-supports-focus": "warn",
+
+    // React/TS: keep noise low
+    "react/react-in-jsx-scope": "off",
+    "@typescript-eslint/no-explicit-any": "off"
+  }
+}

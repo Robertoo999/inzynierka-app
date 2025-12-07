@@ -1,0 +1,44 @@
+services:
+  db:
+    image: postgres:16.4
+    container_name: prolearn_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: prolearn
+      POSTGRES_USER: prolearn
+      POSTGRES_PASSWORD: prolearn
+    ports:
+      - "5432:5432"
+    volumes:
+      - prolearn_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prolearn -d prolearn"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    container_name: prolearn_backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/prolearn
+      DB_USER: prolearn
+      DB_PASSWORD: prolearn
+      PORT: "8080"
+      CORS_ORIGIN: http://localhost:5173
+      APP_VERSION: "0.1.0"
+      APP_JWT_SECRET: "super-secret-key-change-me"
+      APP_JWT_EXPIRES_MINUTES: "240"
+      # Enable IO-mode code execution via Judge0 (JavaScript Node.js id=63, Python3 id=71)
+      # For local dev without hosting Judge0 yourself, you can use the public CE endpoint below.
+      # Note: Public instance is rate-limited and not for production use.
+      JUDGE0_URL: https://ce.judge0.com
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  prolearn_pg:

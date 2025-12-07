@@ -1,0 +1,9 @@
+package com.prolearn.lesson.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+public record LessonCreateRequest(
+        @NotBlank @Size(min = 3, max = 200) String title,
+        @Size(max = 10000) String content
+) {}
