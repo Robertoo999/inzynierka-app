@@ -12,6 +12,11 @@ RUN --mount=type=cache,target=/root/.m2 mvn -q -Dmaven.test.skip=true package
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 ENV TZ=Europe/Warsaw
+ENV PORT=8080
+
 COPY --from=build /app/target/prolearn-backend-*.jar /app/app.jar
+
 EXPOSE 8080
-ENTRYPOINT ["java","-jar","/app/app.jar"]
+
+CMD ["sh", "-c", "java -jar /app/app.jar --server.port=${PORT}"]
+
