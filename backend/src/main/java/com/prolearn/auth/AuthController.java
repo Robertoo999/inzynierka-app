@@ -22,6 +22,7 @@ public class AuthController {
     private final UserRepository users;
     private final PasswordEncoder encoder;
     private final JwtService jwt;
+    
     private final PasswordResetService resetService;
     private final org.springframework.core.env.Environment env;
 
@@ -33,33 +34,34 @@ public class AuthController {
         this.env = env;
     }
 
-    // --- forgot/reset password (MVP) ---
+    // --- forgot/reset password (demo mode: do NOT send email; return token in response) ---
     @PostMapping(value = "/forgot-password", consumes = MediaType.APPLICATION_JSON_VALUE)
-    @ResponseStatus(HttpStatus.OK)
-    public void forgotPassword(@RequestBody java.util.Map<String,String> body) {
+    public java.util.Map<String,Object> forgotPassword(@RequestBody java.util.Map<String,String> body) {
         String email = body == null ? null : body.get("email");
-        if (email == null) return; // always return 200
+        if (email == null) return java.util.Map.of("token", null);
         try {
-            resetService.createTokenForEmail(email.toLowerCase());
-        } catch (Exception e) {
-            // swallow errors and always return 200 to avoid user enumeration
-        }
+            var tokenOpt = resetService.createTokenForEmail(email.toLowerCase());
+            if (tokenOpt.isPresent()) {
+                // In demo mode we return the raw token so UI can show it instead of sending email
+                return java.util.Map.of("token", tokenOpt.get());
+            }
+        } catch (Exception ignored) {}
+        return java.util.Map.of("token", null);
     }
 
     @PostMapping(value = "/reset-password", consumes = MediaType.APPLICATION_JSON_VALUE)
-    @ResponseStatus(HttpStatus.OK)
     public void resetPassword(@RequestBody java.util.Map<String,String> body) {
+        String email = body == null ? null : body.get("email");
         String token = body == null ? null : body.get("token");
         String newPassword = body == null ? null : body.get("newPassword");
-        if (token == null || newPassword == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Brak tokenu lub hasła");
+        if (email == null || token == null || newPassword == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Brak email/token/hasła");
         }
         if (newPassword.length() < 6) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Hasło musi mieć co najmniej 6 znaków");
         var userOpt = resetService.consumeIfValid(token);
-        if (userOpt.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Token nieprawidłowy lub wygasł");
-        }
+        if (userOpt.isEmpty()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Token nieprawidłowy lub wygasł");
         var u = userOpt.get();
+        if (!u.getEmail().equalsIgnoreCase(email)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email i token nie pasują do siebie");
         u.setPasswordHash(encoder.encode(newPassword));
         users.save(u);
     }

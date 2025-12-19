@@ -203,10 +203,9 @@ export const api = {
         j<{ token: string; email: string; role: Role; firstName?: string | null; lastName?: string | null }>('/api/auth/login', { method: 'POST', body: JSON.stringify(p) }),
     changePassword: (token: string, p: { oldPassword: string; newPassword: string }) =>
         j<{ token: string; email: string; role: Role; firstName?: string | null; lastName?: string | null }>('/api/auth/change-password', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(p) }),
-    forgotPassword: (p: { email: string }) =>
-        j<void>('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify(p) }),
-    resetPassword: (p: { token: string; newPassword: string }) =>
-        j<void>('/api/auth/reset-password', { method: 'POST', body: JSON.stringify(p) }),
+    // demo-mode forgot/reset: server returns token in response instead of sending email
+    forgotPassword: (p: { email: string }) => j<{ token: string | null }>('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify(p) }),
+    resetPassword: (p: { email: string; token: string; newPassword: string }) => j<void>('/api/auth/reset-password', { method: 'POST', body: JSON.stringify(p) }),
 
     // lessons (public + in class)
     getLesson: (lessonId: string) => j<LessonDetail>(`/api/lessons/${lessonId}`),

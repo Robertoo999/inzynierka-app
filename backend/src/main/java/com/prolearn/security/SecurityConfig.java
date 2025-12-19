@@ -47,9 +47,7 @@ public class SecurityConfig {
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**").permitAll()
 
                         // auth
-                        .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
-                        // password reset (public endpoints)
-                        .requestMatchers("/api/auth/forgot-password", "/api/auth/reset-password").permitAll()
+                        .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/forgot-password", "/api/auth/reset-password").permitAll()
 
                         // lessons (GET publicznie)
                         .requestMatchers(HttpMethod.GET, "/api/lessons/**").permitAll()

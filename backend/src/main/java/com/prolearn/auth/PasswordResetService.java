@@ -41,7 +41,7 @@ public class PasswordResetService {
         t.setId(UUID.randomUUID());
         t.setUser(u);
         t.setTokenHash(encoder.encode(raw));
-        t.setExpiresAt(Instant.now().plus(30, ChronoUnit.MINUTES));
+        t.setExpiresAt(Instant.now().plus(15, ChronoUnit.MINUTES));
         tokens.save(t);
 
         // dev-mode: log the link

@@ -62,10 +62,11 @@ export default function LoginPage(){
             <h3 className="section-title">Logowanie</h3>
             <div ref={formRef} style={{display:'grid',gap:10}}>
                 <div style={{display:'flex', justifyContent:'flex-end'}}>
-                    <div style={{display:'flex', gap:10}}>
-                        <a href="/register" style={{fontSize:13, color:'var(--brand)'}}>Nie masz konta? Zarejestruj się</a>
-                        <a href="/forgot-password" style={{fontSize:13, color:'var(--brand)'}}>Nie pamiętasz hasła?</a>
-                    </div>
+                    <div style={{display:'flex', gap:12, alignItems:'center'}}>
+                            <a href="/register" style={{fontSize:13, color:'var(--brand)'}}>Nie masz konta? Zarejestruj się</a>
+                            <span style={{color:'var(--muted)', margin:'0 6px'}}>|</span>
+                            <a href="/forgot-password" style={{fontSize:13, color:'var(--brand)'}}>Nie pamiętasz hasła?</a>
+                        </div>
                 </div>
                 <label htmlFor="login-email">Email</label>
                 <input
