@@ -196,6 +196,15 @@ function TaskEditor({ token, activity, onSaved }:{ token:string; activity: Lesso
     const [ioOnly, setIoOnly] = React.useState(false)
     const [preferredMode, setPreferredMode] = React.useState<'EVAL'|'IO'>('IO')
     const toast = useToast()
+    function handleApiErr(e: any) {
+  try {
+    const s = e?.message ? String(e.message) : String(e)
+    toast.show(s, 'error')
+  } catch {
+    toast.show(String(e), 'error')
+  }
+}
+
     const [titleErr, setTitleErr] = React.useState<string|undefined>()
     const [maxErr, setMaxErr] = React.useState<string|undefined>()
     const formRef = React.useRef<HTMLDivElement|null>(null)
