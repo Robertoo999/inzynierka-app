@@ -25,21 +25,31 @@ public class DevUserSeeder implements CommandLineRunner {
     @Override
     public void run(String... args) throws Exception {
         try {
-            createIfMissing("teacher@test.local", "teacherpass", Role.TEACHER);
-            createIfMissing("student@test.local", "studentpass", Role.STUDENT);
+            upsertUser("teacher@test.local", "Test123!", Role.TEACHER);
+            upsertUser("student@test.local", "Test123!", Role.STUDENT);
         } catch (Exception e) {
             // swallow errors during startup seeding to avoid breaking startup in unusual envs
             System.err.println("DevUserSeeder failed: " + e.getMessage());
         }
     }
 
-    private void createIfMissing(String email, String rawPassword, Role role) {
-        if (users.existsByEmail(email)) return;
-        User u = new User();
-        u.setEmail(email);
-        u.setRole(role);
-        u.setPasswordHash(encoder.encode(rawPassword));
-        users.save(u);
-        System.out.println("Created dev user: " + email + " (role=" + role + ")");
+    /**
+     * Create or update the test user. This method is idempotent and will ensure the
+     * account exists and its password/role match the expected test values.
+     */
+    private void upsertUser(String email, String rawPassword, Role role) {
+        users.findByEmail(email).ifPresentOrElse(u -> {
+            u.setPasswordHash(encoder.encode(rawPassword));
+            u.setRole(role);
+            users.save(u);
+            System.out.println("Updated dev user password/role: " + email + " (role=" + role + ")");
+        }, () -> {
+            User u = new User();
+            u.setEmail(email);
+            u.setRole(role);
+            u.setPasswordHash(encoder.encode(rawPassword));
+            users.save(u);
+            System.out.println("Created dev user: " + email + " (role=" + role + ")");
+        });
     }
 }

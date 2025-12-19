@@ -48,6 +48,8 @@ public class SecurityConfig {
 
                         // auth
                         .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
+                        // password reset (public endpoints)
+                        .requestMatchers("/api/auth/forgot-password", "/api/auth/reset-password").permitAll()
 
                         // lessons (GET publicznie)
                         .requestMatchers(HttpMethod.GET, "/api/lessons/**").permitAll()

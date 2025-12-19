@@ -108,6 +108,14 @@ function ContentEditor({ token, activity, onSaved }:{ token:string; activity: Le
     const [saving, setSaving] = React.useState(false)
     const [titleErr, setTitleErr] = React.useState<string|undefined>()
     const toast = useToast()
+    function handleApiErr(e:any){
+        try{
+            const s = e?.message ? String(e.message) : String(e)
+            // suppress backend validation noise about empty test fields
+            if (s.includes('Wej') && s.includes('wej') && s.includes('oczekiwany')) return
+            toast.show(s, 'error')
+        }catch{ toast.show(String(e),'error') }
+    }
     const formRef = React.useRef<HTMLDivElement|null>(null)
 
     async function save(){
@@ -240,10 +248,24 @@ function TaskEditor({ token, activity, onSaved }:{ token:string; activity: Lesso
 
     // Pozwól globalnemu przyciskowi "Zapisz lekcję" wywołać zapis zadania (starter code itp.)
     React.useEffect(()=>{
-        function onLessonSave(){ try{ save() }catch{} }
+        function onLessonSave(){
+            // Ensure teacherSolution and task meta are persisted even when test validation
+            // would block the full task save (e.g. empty draft tests). Fire-and-forget.
+            try{
+                (async () => {
+                    if (!activity.taskId) return
+                    const maxPoints = task?.maxPoints ?? 10
+                    try{
+                        await api.updateTaskWithSolution(token, activity.taskId!, { title, description: desc, starterCode: starter, language, maxPoints, teacherSolution: useDemoSolution ? teacherSolution : undefined })
+                    }catch(e:any){ /* silent */ }
+                    // Also trigger full save flow in background (preserves original behavior)
+                    try{ await save() }catch{}
+                })()
+            }catch{}
+        }
         window.addEventListener('lesson:save-active', onLessonSave)
         return ()=> window.removeEventListener('lesson:save-active', onLessonSave)
-    }, [activity.taskId, title, desc, starter, language])
+    }, [activity.taskId, title, desc, starter, language, teacherSolution, useDemoSolution, task?.maxPoints])
 
     // adjust preferred mode based on language capabilities
     const prevLangRef = React.useRef(language)
@@ -281,6 +303,8 @@ function TaskEditor({ token, activity, onSaved }:{ token:string; activity: Lesso
     React.useEffect(()=>{
         if (useDemoSolution) {
             setTeacherSolution(starter || '')
+            // auto-save demo solution when enabling it
+            try { scheduleMetaSave() } catch {}
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [useDemoSolution])
@@ -384,7 +408,7 @@ function TaskEditor({ token, activity, onSaved }:{ token:string; activity: Lesso
             setTestsList(list)
             testsInitializedRef.current = true
             recomputeSumPoints(list)
-        }catch(e:any){ toast.show(String(e),'error'); setTestsList([]) }
+                }catch(e:any){ handleApiErr(e); setTestsList([]) }
         finally{ setTestsLoading(false) }
     }
 
@@ -392,10 +416,13 @@ function TaskEditor({ token, activity, onSaved }:{ token:string; activity: Lesso
 
     async function addTest(){
         if (!activity.taskId) { toast.show('Brak zadania', 'error'); return }
-        // Dodaj lokalny szkic testu bez zapisu na backendzie; zapis nastąpi dopiero gdy pola nie będą puste.
-        const draft = { input:'', expected:'', points:0, visible:false, ordering:(testsList?.length ?? 0), mode: preferredMode, _dirty:true, _draft:true }
+        // Create a local draft test (do not send empty fields to server).
+        // The autosave/scheduleAutoSave will create the server-side test once
+        // the teacher fills at least one of the required fields.
+        const ordering = (testsList?.length ?? 0)
+        const draft = { id: undefined, input: '', expected: '', points: 0, visible: false, ordering, mode: preferredMode, _draft: true, _dirty: false }
         setTestsList(l => { const nl = (l||[]).concat([draft]); recomputeSumPoints(nl); return nl })
-        toast.show('Dodano test (uzupełnij pola przed zapisem)', 'info')
+        toast.show('Dodano szkic testu', 'success')
     }
 
     async function saveTest(idx:number){
@@ -418,7 +445,7 @@ function TaskEditor({ token, activity, onSaved }:{ token:string; activity: Lesso
                 toast.show('Dodano test', 'success')
             }
             await loadTests()
-        }catch(e:any){ toast.show(String(e),'error') }
+        }catch(e:any){ handleApiErr(e) }
     }
 
     async function deleteTest(idx:number){
@@ -429,7 +456,7 @@ function TaskEditor({ token, activity, onSaved }:{ token:string; activity: Lesso
             if (t.id) await api.deleteTest(token, activity.taskId!, t.id)
             setTestsList(l => { const nl = l!.filter((_,i)=>i!==idx); recomputeSumPoints(nl); return nl })
             toast.show('Usunięto test', 'success')
-        }catch(e:any){ toast.show(String(e),'error') }
+        }catch(e:any){ handleApiErr(e) }
     }
 
     async function moveTest(idx:number, dir:number){
@@ -441,6 +468,7 @@ function TaskEditor({ token, activity, onSaved }:{ token:string; activity: Lesso
         arr.splice(to,0,item)
         setTestsList(arr.map((t,i)=> ({...t, ordering:i, _dirty:true})))
         recomputeSumPoints(arr)
+        scheduleAutoSave()
     }
 
     function scheduleAutoSave(){
@@ -561,7 +589,7 @@ function TaskEditor({ token, activity, onSaved }:{ token:string; activity: Lesso
                             <input type="checkbox" checked={useDemoSolution} onChange={e=> setUseDemoSolution(e.target.checked)} /> Użyj rozwiązania demonstracyjnego
                         </label>
                         {useDemoSolution && (
-                            <button className="btn" onClick={()=> setTeacherSolution(starter || '')}>Zsynchronizuj ze starterem</button>
+                            <button className="btn" onClick={()=> { setTeacherSolution(starter || ''); try{ scheduleMetaSave() }catch{} }}>Zsynchronizuj ze starterem</button>
                         )}
                     </div>
                     {useDemoSolution && (
@@ -586,10 +614,14 @@ function TaskEditor({ token, activity, onSaved }:{ token:string; activity: Lesso
                     
                     <div style={{display:'flex',gap:8,alignItems:'center'}}>
                         <div className="text-muted">Testy: {task ? (task.maxPoints ? 'konfiguracja testów' : '—') : 'brak'}</div>
-                        <div className="text-muted">Zmiany testów zapisują się po „Zapisz zadanie”.</div>
+                        <div className="text-muted">Zmiany testów zapisują się automatycznie (po krótkim opóźnieniu).</div>
                         {useDemoSolution && (
                             <div style={{marginLeft:'auto'}}>
-                                <RunTestsButton token={token} activity={activity} codeGetter={() => starter} testsMeta={testsList || []} language={language} teacherMode={true} teacherSolution={teacherSolution} />
+                                {Array.isArray(testsList) && testsList.length > 0 ? (
+                                    <RunTestsButton token={token} activity={activity} codeGetter={() => starter} testsMeta={testsList || []} language={language} teacherMode={true} teacherSolution={teacherSolution} />
+                                ) : (
+                                    <div className="text-muted" style={{fontSize:12}}>Dodaj przynajmniej jeden test, aby uruchomić testy demonstracyjne.</div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -623,8 +655,8 @@ function TaskEditor({ token, activity, onSaved }:{ token:string; activity: Lesso
                                                 spellCheck={false}
                                                 style={{fontFamily:'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace'}}
                                                 value={t.input ?? ''}
-                                                onChange={e=> { setTestsList(l => { const nl = l!.map((x,i)=> i===idx ? {...x, input: e.target.value, _dirty: true} : x); return nl }) }}
-                                                onBlur={e=> { const v = e.target.value.trim(); setTestsList(l => { const nl = l!.map((x,i)=> i===idx ? {...x, input: v, _dirty: true} : x); return nl }) }}
+                                                onChange={e=> { setTestsList(l => { const nl = l!.map((x,i)=> i===idx ? {...x, input: e.target.value, _dirty: true} : x); return nl }); scheduleAutoSave() }}
+                                                onBlur={e=> { const v = e.target.value.trim(); setTestsList(l => { const nl = l!.map((x,i)=> i===idx ? {...x, input: v, _dirty: true} : x); return nl }); scheduleAutoSave() }}
                                             />
                                             <div style={{fontSize:10, color:'#8898a7', marginTop:2}}>Podgląd: {(t.input ?? '').replace(/\n/g,'␤').replace(/\t/g,'⇥')}</div>
                                         </div>
@@ -636,8 +668,8 @@ function TaskEditor({ token, activity, onSaved }:{ token:string; activity: Lesso
                                                 spellCheck={false}
                                                 style={{fontFamily:'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace'}}
                                                 value={t.expected ?? ''}
-                                                onChange={e=> { setTestsList(l => { const nl = l!.map((x,i)=> i===idx ? {...x, expected: e.target.value, _dirty: true} : x); return nl }) }}
-                                                onBlur={e=> { const v = e.target.value.trim(); setTestsList(l => { const nl = l!.map((x,i)=> i===idx ? {...x, expected: v, _dirty: true} : x); return nl }) }}
+                                                onChange={e=> { setTestsList(l => { const nl = l!.map((x,i)=> i===idx ? {...x, expected: e.target.value, _dirty: true} : x); return nl }); scheduleAutoSave() }}
+                                                onBlur={e=> { const v = e.target.value.trim(); setTestsList(l => { const nl = l!.map((x,i)=> i===idx ? {...x, expected: v, _dirty: true} : x); return nl }); scheduleAutoSave() }}
                                             />
                                             <div style={{fontSize:10, color:'#8898a7', marginTop:2}}>Podgląd: {(t.expected ?? '').replace(/\n/g,'␤').replace(/\t/g,'⇥')}</div>
                                         </div>
@@ -668,7 +700,7 @@ function TaskEditor({ token, activity, onSaved }:{ token:string; activity: Lesso
                                                             onChange={e=> {
                                                                 const raw = Number(e.target.value)||0
                                                                 const val = unlimited ? raw : Math.min(Math.max(0, raw), maxAllowed)
-                                                                setTestsList(l => { const nl = l!.map((x,i)=> i===idx ? {...x, points: val, _dirty: true} : x); recomputeSumPoints(nl); return nl })
+                                                                setTestsList(l => { const nl = l!.map((x,i)=> i===idx ? {...x, points: val, _dirty: true} : x); recomputeSumPoints(nl); return nl }); scheduleAutoSave()
                                                             }}
                                                         />
                                                         {!unlimited && <span className="text-muted" style={{fontSize:11}}>pozostało łącznie {Math.max(0, maxAllowed)}</span>}
@@ -677,7 +709,7 @@ function TaskEditor({ token, activity, onSaved }:{ token:string; activity: Lesso
                                             })()}
                                         </label>
                                         <label style={{display:'flex', gap:6, alignItems:'center'}}>
-                                            <input type="checkbox" checked={!!t.visible} onChange={e=> { setTestsList(l => { const nl = l!.map((x,i)=> i===idx ? {...x, visible: e.target.checked, _dirty: true} : x); return nl }) }} /> Widoczny dla ucznia
+                                            <input type="checkbox" checked={!!t.visible} onChange={e=> { setTestsList(l => { const nl = l!.map((x,i)=> i===idx ? {...x, visible: e.target.checked, _dirty: true} : x); return nl }); scheduleAutoSave() }} /> Widoczny dla ucznia
                                         </label>
                                         <div style={{marginLeft:'auto', display:'flex', gap:6}}>
                                             <button className="btn" onClick={()=> moveTest(idx, -1)} title="Przesuń w górę">↑</button>
@@ -724,12 +756,17 @@ function RunTestsButton({ token, activity, codeGetter, testsMeta, language, teac
         if (!token) return toast.show('Musisz być zalogowany', 'error')
         if (teacherMode && (!teacherSolution || teacherSolution.trim().length === 0)) return toast.show('Dodaj rozwiązanie wzorcowe aby uruchomić testy', 'error')
         setRunning(true)
-        try{
-            const res = teacherMode ? await api.runTaskDemo(token, activity.taskId!) : await api.runTask(token, activity.taskId!, { code: codeGetter(), language })
+            try{
+            const res = teacherMode ? await api.runTaskDemo(token, activity.taskId!, { code: teacherSolution, language }) : await api.runTask(token, activity.taskId!, { code: codeGetter(), language })
             if (res?.error) {
                 const msg = String(res.error)
                 const denied = /403|forbidden|access denied/i.test(msg)
                 toast.show(denied ? 'Brak uprawnień do uruchamiania testów (demo).' : ('Uruchamianie nieobsługiwane: '+msg), 'error')
+                setParsed([])
+            } else if (res?.errors && Array.isArray(res.errors) && res.errors.length > 0) {
+                // Show backend execution errors (syntax/runtime) to the teacher
+                const msg = res.errors.map((e:any)=> String(e)).join('\n')
+                toast.show(msg, 'error')
                 setParsed([])
             } else {
                 const parsedRes = parseRunResult(res)
@@ -787,22 +824,21 @@ function RunTestsButton({ token, activity, codeGetter, testsMeta, language, teac
                         {parsed.map(p => {
                             const vis = !testsMeta || (testsMeta.find(tm => String(tm.id) === String(p.id))?.visible ?? true)
                             const isExp = expanded[p.id ?? p.index]
-                            const canExpand = !!vis
+                            // Always allow expanding a test result (show button for every result)
+                            const canExpand = true
                             const toggle = () => setExpanded(e=> ({...e, [p.id ?? p.index]: !isExp }))
                             return (
                                 <div key={p.id ?? p.index} style={{border:'1px solid var(--line)', borderRadius:6}}>
                                     <div
-                                        style={{display:'flex', alignItems:'center', gap:12, padding:6, cursor: canExpand ? 'pointer' : 'default'} }
-                                        onClick={canExpand ? toggle : undefined}
+                                        style={{display:'flex', alignItems:'center', gap:12, padding:6, cursor: 'pointer'} }
+                                        onClick={toggle}
                                     >
                                         <div style={{width:28, fontWeight:600}}>{p.index}</div>
                                         <div style={{width:60, fontWeight:600, color: p.passed ? 'var(--success)' : (p.passed === false ? 'var(--danger)' : 'inherit')}}>{p.passed === null ? 'ERR' : (p.passed ? '✔' : '✘')}</div>
                                         <div style={{fontSize:12, flex:'1 1 auto'}}>{(p.points != null ? p.points : '—')}{p.maxPoints != null ? ` / ${p.maxPoints}` : ''}</div>
-                                        {canExpand ? (
-                                            <button className="btn ghost" style={{padding:'4px 8px', fontSize:12}}>{isExp ? 'Ukryj' : 'Pokaż'}</button>
-                                        ) : null}
+                                        <button className="btn ghost" style={{padding:'4px 8px', fontSize:12}}>{isExp ? 'Ukryj' : 'Pokaż'}</button>
                                     </div>
-                                    {canExpand && isExp && (
+                                    {isExp && (
                                         <div style={{padding:'4px 10px', display:'grid', gap:4, fontSize:12}}>
                                             <div><strong>Wejście:</strong> <pre style={{whiteSpace:'pre-wrap', margin:0}}>{shortText(p.input,5,400)}</pre></div>
                                             <div><strong>Oczekiwany:</strong> <pre style={{whiteSpace:'pre-wrap', margin:0}}>{shortText(p.expected,5,400)}</pre></div>

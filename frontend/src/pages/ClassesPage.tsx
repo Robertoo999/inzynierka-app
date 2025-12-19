@@ -1,6 +1,7 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, type Role, type Classroom } from '../api'
+import { ROLE_LABELS_PL } from '../constants/roles'
 import { useAuth, type Auth } from '../hooks/useAuth'
 import { useToast } from '../components/Toasts'
 import Breadcrumbs from '../components/Breadcrumbs'
@@ -81,7 +82,8 @@ function AuthCard({ auth, setAuth }: { auth: Auth; setAuth: (a: Auth) => void })
                         <div style={{marginTop:10}}>
                             <label>Rola{' '}
                                 <select className="select" value={role} onChange={e=>setRole(e.target.value as Role)}>
-                                    <option>STUDENT</option><option>TEACHER</option>
+                                    <option value="STUDENT">{ROLE_LABELS_PL.STUDENT}</option>
+                                    <option value="TEACHER">{ROLE_LABELS_PL.TEACHER}</option>
                                 </select>
                             </label>
                         </div>

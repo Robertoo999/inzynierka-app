@@ -125,8 +125,8 @@ export const LANG_CAPS = {
     javascript: {
         eval: true,
         io: true,
-        sample: `// Funkcja solve dostaje tekst wejściowy w parametrze input\n// Zwróć wynik jako string\nfunction solve(input) {\n  // TODO: tu uczeń pisze swoje rozwiązanie\n  return input;\n}`,
-        sampleIO: `function solve(input) {\n  // TODO: tu uczeń pisze swoje rozwiązanie\n  // input - cały tekst wejścia jako string\n  return input;\n}\n\n// ----- Kod systemowy - NIE ZMIENIAJ PONIŻEJ -----\nconst fs = require('fs');\nconst data = fs.readFileSync(0, 'utf8').trim();\nprocess.stdout.write(String(solve(data)));`,
+        sample: `// Funkcja solve dostaje tekst wejściowy w parametrze input\n// Zwróć wynik jako string\nfunction solve(input) {\n  // Parsuje wszystkie liczby z wejścia i sumuje je\n  const nums = (String(input || '').match(/-?\\d+/g) || []).map(Number)\n  return String(nums.reduce((a, b) => a + b, 0))\n}`,
+        sampleIO: `function solve(input) {\n  // Parsuje wszystkie liczby z wejścia i sumuje je\n  const nums = (String(input || '').match(/-?\\d+/g) || []).map(Number)\n  return String(nums.reduce((a, b) => a + b, 0))\n}\n\n// ----- Kod systemowy - NIE ZMIENIAJ PONIŻEJ -----\nconst fs = require('fs');\nconst data = fs.readFileSync(0, 'utf8').trim();\nprocess.stdout.write(String(solve(data)));`,
         evalSignatureHint: 'JS EVAL: function solve(input: string): string'
     },
     python: {
@@ -148,11 +148,11 @@ async function j<T>(path: string, init: RequestInit = {}): Promise<T> {
 
     let res: Response
     let text: string = ''
+    const runtimeBase = (typeof API_BASE === 'string' && API_BASE && API_BASE.startsWith('http')) ? API_BASE : inferredBase
+    const sanitizedBase = runtimeBase.endsWith('/') ? runtimeBase.slice(0, -1) : runtimeBase
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`
+    const url = path.match(/^https?:\/\//) ? path : `${sanitizedBase}${normalizedPath}`
     try {
-        const runtimeBase = (typeof API_BASE === 'string' && API_BASE && API_BASE.startsWith('http')) ? API_BASE : inferredBase
-        const sanitizedBase = runtimeBase.endsWith('/') ? runtimeBase.slice(0, -1) : runtimeBase
-        const normalizedPath = path.startsWith('/') ? path : `/${path}`
-        const url = path.match(/^https?:\/\//) ? path : `${sanitizedBase}${normalizedPath}`
         res = await fetch(url, { ...init, headers })
         text = await res.text().catch(() => '')
     } finally {
@@ -174,7 +174,21 @@ async function j<T>(path: string, init: RequestInit = {}): Promise<T> {
         const full = code ? `${msg}${fields ? '' : ' ('+code+')'}` : msg
         throw new ApiError(full, { status: res.status, code, fields })
     }
-    if (!text) return undefined as unknown as T
+    if (!text) {
+        // If server returned no body but provided a Location header, follow it to retrieve the created resource
+        try {
+            const loc = res.headers.get('Location') || res.headers.get('location')
+            if (loc) {
+                const abs = loc.match(/^https?:\/\//) ? loc : `${sanitizedBase}${loc.startsWith('/') ? loc : '/' + loc}`
+                const follow = await fetch(abs, { headers })
+                const t2 = await follow.text().catch(() => '')
+                if (t2) return JSON.parse(t2) as T
+            }
+        } catch (e) {
+            // ignore and fall through to undefined
+        }
+        return undefined as unknown as T
+    }
     try { return JSON.parse(text) as T } catch { return undefined as unknown as T }
 }
 
@@ -189,6 +203,10 @@ export const api = {
         j<{ token: string; email: string; role: Role; firstName?: string | null; lastName?: string | null }>('/api/auth/login', { method: 'POST', body: JSON.stringify(p) }),
     changePassword: (token: string, p: { oldPassword: string; newPassword: string }) =>
         j<{ token: string; email: string; role: Role; firstName?: string | null; lastName?: string | null }>('/api/auth/change-password', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(p) }),
+    forgotPassword: (p: { email: string }) =>
+        j<void>('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify(p) }),
+    resetPassword: (p: { token: string; newPassword: string }) =>
+        j<void>('/api/auth/reset-password', { method: 'POST', body: JSON.stringify(p) }),
 
     // lessons (public + in class)
     getLesson: (lessonId: string) => j<LessonDetail>(`/api/lessons/${lessonId}`),
@@ -244,8 +262,12 @@ export const api = {
         j<void>(`/api/activities/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }),
 
     // submissions
-    submit: (token: string, taskId: string, p: { content: string; code: string }) =>
-        j<Submission>(`/api/tasks/${taskId}/submissions`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(p) }),
+    submit: async (token: string, taskId: string, p: { content: string; code: string }) => {
+        const res = await j<Submission>(`/api/tasks/${taskId}/submissions`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(p) }).catch((e) => { throw e })
+        if (res) return res
+        // Fallback: some servers may respond with empty body. Fetch the latest submission for the task.
+        return api.mySubmissionForTask(token, taskId)
+    },
     // runTask: returns grader result or an object with `error` when the run is not supported/failed
     runTask: async (token: string, taskId: string, p: { code: string; language?: string }) => {
         try {
@@ -256,10 +278,10 @@ export const api = {
             return { error: msg }
         }
     },
-    // teacher-only demo run uses stored teacherSolution; body is optional
-    runTaskDemo: async (token: string, taskId: string) => {
+    // teacher-only demo run uses stored teacherSolution; body is optional — allow passing ad-hoc code in body
+    runTaskDemo: async (token: string, taskId: string, p?: { code?: string; language?: string }) => {
         try {
-            return await j<any>(`/api/tasks/${taskId}/run-demo`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+            return await j<any>(`/api/tasks/${taskId}/run-demo`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: p ? JSON.stringify(p) : undefined })
         } catch (err:any) {
             const msg = err?.message ? String(err.message) : String(err)
             return { error: msg }

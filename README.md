@@ -38,3 +38,12 @@ Plik `docker-compose.yml` zawiera **tylko** usługę `db` (PostgreSQL). W kolejn
 
 ## Licencja
 MIT
+
+## Dane testowe
+
+W środowisku developerskim aplikacja tworzy dwa konta testowe:
+
+- **Nauczyciel**: `teacher@test.local` / `Test123!`
+- **Uczeń**: `student@test.local` / `Test123!`
+
+Hasła są zapisywane przy użyciu aplikacyjnego `PasswordEncoder` (BCrypt). Konto jest tworzone tylko w profilu `dev` i nie będzie dodawane w produkcji.

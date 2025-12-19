@@ -22,11 +22,46 @@ public class AuthController {
     private final UserRepository users;
     private final PasswordEncoder encoder;
     private final JwtService jwt;
+    private final PasswordResetService resetService;
+    private final org.springframework.core.env.Environment env;
 
-    public AuthController(UserRepository users, PasswordEncoder encoder, JwtService jwt) {
+    public AuthController(UserRepository users, PasswordEncoder encoder, JwtService jwt, PasswordResetService resetService, org.springframework.core.env.Environment env) {
         this.users = users;
         this.encoder = encoder;
         this.jwt = jwt;
+        this.resetService = resetService;
+        this.env = env;
+    }
+
+    // --- forgot/reset password (MVP) ---
+    @PostMapping(value = "/forgot-password", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseStatus(HttpStatus.OK)
+    public void forgotPassword(@RequestBody java.util.Map<String,String> body) {
+        String email = body == null ? null : body.get("email");
+        if (email == null) return; // always return 200
+        try {
+            resetService.createTokenForEmail(email.toLowerCase());
+        } catch (Exception e) {
+            // swallow errors and always return 200 to avoid user enumeration
+        }
+    }
+
+    @PostMapping(value = "/reset-password", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseStatus(HttpStatus.OK)
+    public void resetPassword(@RequestBody java.util.Map<String,String> body) {
+        String token = body == null ? null : body.get("token");
+        String newPassword = body == null ? null : body.get("newPassword");
+        if (token == null || newPassword == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Brak tokenu lub hasła");
+        }
+        if (newPassword.length() < 6) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Hasło musi mieć co najmniej 6 znaków");
+        var userOpt = resetService.consumeIfValid(token);
+        if (userOpt.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Token nieprawidłowy lub wygasł");
+        }
+        var u = userOpt.get();
+        u.setPasswordHash(encoder.encode(newPassword));
+        users.save(u);
     }
 
     @PostMapping(value = "/register", consumes = MediaType.APPLICATION_JSON_VALUE)

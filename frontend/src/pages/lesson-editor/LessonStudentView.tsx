@@ -714,9 +714,7 @@ function TaskStudent({ token, activity, onSubmitted }:{ token:string|null; activ
                 >
                     Wyślij
                 </button>
-                <div style={{marginLeft:'auto'}} className="text-muted">
-                    Próba {attemptsUsed}/{maxAttempts} • pozostało {attemptsRemaining}
-                </div>
+                {/* attempts removed: always single attempt in current flow */}
             </div>
             {infoLine && (
                 <div role="status" aria-live="polite" style={{fontSize:12, marginTop:-4}}>{infoLine}</div>
@@ -776,7 +774,7 @@ function TaskStudent({ token, activity, onSubmitted }:{ token:string|null; activ
             {loadingLatest && <small className="text-muted" style={{display:'block'}}>Ładuję ostatnią ocenę…</small>}
             {latestSubmission && (
                 <div style={{padding:10, border:'1px solid var(--line)', borderRadius:10}}>
-                    <div><strong>Ostatnia ocena:</strong> {latestSubmission.effectiveScore ?? latestSubmission.points ?? 0} / {latestSubmission.maxPoints ?? task?.maxPoints ?? 0}</div>
+                    <div><strong>Ocena:</strong> {latestSubmission.effectiveScore ?? latestSubmission.points ?? 0}</div>
                     {latestSubmission.teacherComment && <div className="text-muted">Komentarz: {latestSubmission.teacherComment}</div>}
                 </div>
             )}

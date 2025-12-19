@@ -6,8 +6,9 @@ import { useNavigate, useLocation } from 'react-router-dom'
 
 export default function LoginPage(){
     const { setAuth } = useAuth()
-    const [email, setEmail] = React.useState('teacher@test.local')
-    const [password, setPassword] = React.useState('teacherpass')
+    // Keep email ALWAYS empty on load (do not prefill from storage)
+    const [email, setEmail] = React.useState('')
+    const [password, setPassword] = React.useState('')
     const [error, setError] = React.useState<string|undefined>()
     const [fieldErrors, setFieldErrors] = React.useState<{ email?: string; password?: string }>({})
     const [loading, setLoading] = React.useState(false)
@@ -61,7 +62,10 @@ export default function LoginPage(){
             <h3 className="section-title">Logowanie</h3>
             <div ref={formRef} style={{display:'grid',gap:10}}>
                 <div style={{display:'flex', justifyContent:'flex-end'}}>
-                    <a href="/register" style={{fontSize:13, color:'var(--brand)'}}>Nie masz konta? Zarejestruj się</a>
+                    <div style={{display:'flex', gap:10}}>
+                        <a href="/register" style={{fontSize:13, color:'var(--brand)'}}>Nie masz konta? Zarejestruj się</a>
+                        <a href="/forgot-password" style={{fontSize:13, color:'var(--brand)'}}>Nie pamiętasz hasła?</a>
+                    </div>
                 </div>
                 <label htmlFor="login-email">Email</label>
                 <input
@@ -72,6 +76,7 @@ export default function LoginPage(){
                     placeholder="np. uczen@szkola.pl"
                     aria-describedby="login-email-hint login-email-error"
                     aria-invalid={fieldErrors.email ? true : false}
+                    autoComplete="username"
                 />
                 <span id="login-email-hint" className="text-muted" style={{fontSize:12}}>Użyj adresu email do logowania.</span>
                 {fieldErrors.email && <span id="login-email-error" className="text-danger" style={{fontSize:12}}>Błąd: {fieldErrors.email}</span>}
@@ -86,6 +91,7 @@ export default function LoginPage(){
                     placeholder="Hasło"
                     aria-describedby="login-pass-hint login-pass-error"
                     aria-invalid={fieldErrors.password ? true : false}
+                    autoComplete="current-password"
                 />
                 <span id="login-pass-hint" className="text-muted" style={{fontSize:12}}>Hasło ma mieć min. 6 znaków.</span>
                 {fieldErrors.password && <span id="login-pass-error" className="text-danger" style={{fontSize:12}}>Błąd: {fieldErrors.password}</span>}

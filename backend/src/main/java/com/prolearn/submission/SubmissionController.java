@@ -59,6 +59,98 @@ public class SubmissionController {
         this.codeExecutionService = codeExecutionService;
     }
 
+    // Filter run results for non-teacher callers: remove hidden tests from the returned 'tests' array
+    private Map<String,Object> sanitizeRunOutput(Map<String,Object> out, List<ProgrammingTestCase> casesList, Authentication auth) {
+        if (out == null) return out;
+        boolean callerIsTeacher = false;
+        if (auth != null) {
+            var authNames = auth.getAuthorities().stream().map(a -> a.getAuthority()).toList();
+            callerIsTeacher = authNames.contains("TEACHER") || authNames.contains("ROLE_TEACHER");
+        }
+        if (callerIsTeacher) return out;
+        Object testsObj = out.get("tests");
+        if (!(testsObj instanceof List<?>)) return out;
+        List<?> arr = (List<?>) testsObj;
+        Map<java.util.UUID, ProgrammingTestCase> byId = new HashMap<>();
+        if (casesList != null) for (var c : casesList) byId.put(c.getId(), c);
+        List<Object> filtered = new ArrayList<>();
+        for (int idx = 0; idx < arr.size(); idx++) {
+            Object o = arr.get(idx);
+            if (!(o instanceof Map<?,?>)) continue;
+            Map<?,?> m = (Map<?,?>) o;
+            Object idVal = m.get("id");
+            java.util.UUID uid = null;
+            if (idVal instanceof java.util.UUID) uid = (java.util.UUID) idVal;
+            else if (idVal instanceof String) {
+                try { uid = java.util.UUID.fromString((String) idVal); } catch(Exception ignored) { uid = null; }
+            }
+            if (uid == null) {
+                // If element lacks id, try to align by index with casesList
+                if (casesList != null && idx < casesList.size()) {
+                    ProgrammingTestCase tc = casesList.get(idx);
+                    if (tc == null || tc.isVisible()) filtered.add(m);
+                } else {
+                    // keep when alignment impossible
+                    filtered.add(m);
+                }
+            } else {
+                ProgrammingTestCase tc = byId.get(uid);
+                if (tc == null || tc.isVisible()) filtered.add(m);
+            }
+        }
+        // silent in production: do not log sanitized details here
+        out.put("tests", filtered);
+        // Also sanitize any serialized stdout that may contain the full test array
+        try {
+            Object rawStdout = out.get("stdout");
+                if (rawStdout instanceof String s && casesList != null && !casesList.isEmpty()) {
+                    String trimmed = s.trim();
+                    java.util.List<java.util.Map<String,Object>> parsedList = null;
+                    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+                        parsedList = objectMapper.readValue(trimmed, java.util.List.class);
+                    } else {
+                        // try to find last JSON array inside the string
+                        int i = trimmed.lastIndexOf('[');
+                        if (i >= 0) {
+                            try { parsedList = objectMapper.readValue(trimmed.substring(i), java.util.List.class); } catch (Exception ignored) { parsedList = null; }
+                        }
+                    }
+                    if (parsedList != null) {
+                        // Build map of visible tests by id or by index
+                        Map<java.util.UUID, Boolean> visibleById = new HashMap<>();
+                        for (var c : casesList) visibleById.put(c.getId(), c.isVisible());
+                        java.util.List<java.util.Map<String,Object>> outArr = new ArrayList<>();
+                        for (int idx = 0; idx < parsedList.size(); idx++) {
+                            java.util.Map<String,Object> item = parsedList.get(idx);
+                            boolean keep = true;
+                            Object idNode = item.get("id");
+                            java.util.UUID uid = null;
+                            if (idNode instanceof java.util.UUID) uid = (java.util.UUID) idNode;
+                            else if (idNode instanceof String) {
+                                try { uid = java.util.UUID.fromString((String) idNode); } catch(Exception ignored) { uid = null; }
+                            }
+                            if (uid != null) {
+                                Boolean vis = visibleById.get(uid);
+                                if (vis != null && !vis.booleanValue()) keep = false;
+                            } else {
+                                // align by index
+                                if (idx < casesList.size()) {
+                                    ProgrammingTestCase tc = casesList.get(idx);
+                                    if (tc != null && !tc.isVisible()) keep = false;
+                                }
+                            }
+                            if (keep) {
+                                outArr.add(item);
+                            }
+                        }
+                        out.put("stdout", objectMapper.writeValueAsString(outArr));
+                }
+            }
+        } catch (Exception ignored) {}
+
+        return out;
+    }
+
     // ---------- Creation & Submission ----------
 
     @RolesAllowed({"STUDENT","ROLE_STUDENT"})
@@ -94,7 +186,7 @@ public class SubmissionController {
         gradeAuto(task, s);
 
         s = submissions.save(s);
-        return map(s);
+        return map(s, auth);
     }
 
     // Alias used by tests expecting method name 'submit'
@@ -306,7 +398,7 @@ public class SubmissionController {
                     long passed = results.stream().filter(m -> Boolean.TRUE.equals(m.get("passed"))).count();
                     int score = results.stream().mapToInt(m -> ((Number)m.getOrDefault("points",0)).intValue()).sum();
                     out.put("tests", results); out.put("passed", passed); out.put("failed", results.size()-passed); out.put("score", score);
-                    return out;
+                    return sanitizeRunOutput(out, casesList, auth);
                 } else {
                     var res = jsAutoGrader.gradeWithCases(codeToRun, casesList);
                     out.put("passed", res.passed); out.put("failed", res.failed); out.put("score", res.score); out.put("stdout", res.stdout); out.put("errors", res.errors);
@@ -319,12 +411,12 @@ public class SubmissionController {
                             }
                         }
                     } catch (Exception ignored) {}
-                    return out;
+                    return sanitizeRunOutput(out, casesList, auth);
                 }
             } else {
                 var res = jsAutoGrader.grade(codeToRun, task.getTests(), task.getMaxPoints());
                 out.put("passed", res.passed); out.put("failed", res.failed); out.put("score", res.score); out.put("stdout", res.stdout); out.put("errors", res.errors);
-                return out;
+                return sanitizeRunOutput(out, casesList, auth);
             }
         } else if (effectiveLang != null && (effectiveLang.equalsIgnoreCase("python") || effectiveLang.toLowerCase().startsWith("py"))) {
             if (casesList == null || casesList.isEmpty()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Brak skonfigurowanych testów dla tego zadania");
@@ -359,12 +451,12 @@ public class SubmissionController {
                     testResults.add(tr);
                 }
             }
-            Map<String,Object> out = new HashMap<>();
-            out.put("tests", testResults);
-            out.put("passed", testResults.stream().filter(t -> Boolean.TRUE.equals(t.get("passed"))).count());
-            out.put("failed", testResults.stream().filter(t -> !Boolean.TRUE.equals(t.get("passed"))).count());
-            out.put("score", testResults.stream().mapToInt(t -> ((Number)t.get("points")).intValue()).sum());
-            return out;
+             Map<String,Object> out = new HashMap<>();
+             out.put("tests", testResults);
+             out.put("passed", testResults.stream().filter(t -> Boolean.TRUE.equals(t.get("passed"))).count());
+             out.put("failed", testResults.stream().filter(t -> !Boolean.TRUE.equals(t.get("passed"))).count());
+             out.put("score", testResults.stream().mapToInt(t -> ((Number)t.get("points")).intValue()).sum());
+             return sanitizeRunOutput(out, casesList, auth);
         } else {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Uruchamianie nieobsługiwane dla języka: " + effectiveLang);
         }
@@ -373,13 +465,13 @@ public class SubmissionController {
     // ---------- Demo Run (teacher solution) ----------
 
     @RolesAllowed({"TEACHER","ROLE_TEACHER"})
-    @PostMapping(value = "/api/tasks/{taskId}/run-demo")
+    @PostMapping(value = "/api/tasks/{taskId}/run-demo", consumes = "application/json", produces = "application/json")
     @Transactional(readOnly = true)
-    public Map<String,Object> runDemo(@PathVariable("taskId") UUID taskId) {
+    public Map<String,Object> runDemo(@PathVariable("taskId") UUID taskId, @RequestBody(required = false) RunRequest req) {
         Task task = tasks.findById(taskId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Nie znaleziono zadania"));
-        String teacherCode = task.getTeacherSolution();
+        String teacherCode = (req != null && req.code() != null && !req.code().isBlank()) ? req.code() : task.getTeacherSolution();
         if (teacherCode == null || teacherCode.trim().isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Brak rozwiązania wzorcowego (teacherSolution) dla zadania");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Brak rozwiązania wzorcowego (teacherSolution) dla zadania — podaj kod w ciele żądania lub zapisz rozwiązanie demonstracyjne");
         }
         var casesList = testRepo.findByTaskIdOrderByOrderAsc(taskId);
         String effectiveLang = task.getLanguage();
@@ -453,6 +545,11 @@ public class SubmissionController {
             }
         }
         return result;
+    }
+
+    // Backwards-compatible overload used by tests that call controller.runDemo(taskId)
+    public Map<String,Object> runDemo(UUID taskId) {
+        return runDemo(taskId, null);
     }
 
     // Internal runner used by demo
@@ -577,7 +674,7 @@ public class SubmissionController {
     @Transactional(readOnly = true)
     public List<SubmissionResponse> mySubmissions(Authentication auth) {
         UUID studentId = (UUID) auth.getDetails();
-        return submissions.findByStudentIdOrderByCreatedAtDesc(studentId).stream().map(this::map).toList();
+        return submissions.findByStudentIdOrderByCreatedAtDesc(studentId).stream().map(s -> map(s, auth)).toList();
     }
 
     @RolesAllowed({"STUDENT","ROLE_STUDENT"})
@@ -587,14 +684,14 @@ public class SubmissionController {
         UUID studentId = (UUID) auth.getDetails();
         Submission s = submissions.findTopByTaskIdAndStudent_IdOrderByCreatedAtDesc(taskId, studentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Nie znaleziono zgłoszenia"));
-        return map(s);
+        return map(s, auth);
     }
 
     @RolesAllowed({"TEACHER","ROLE_TEACHER"})
     @GetMapping("/api/tasks/{taskId}/submissions")
     @Transactional(readOnly = true)
-    public List<SubmissionResponse> listForTask(@PathVariable("taskId") UUID taskId) {
-        return submissions.findByTaskIdOrderByCreatedAtDesc(taskId).stream().map(this::map).toList();
+    public List<SubmissionResponse> listForTask(@PathVariable("taskId") UUID taskId, Authentication auth) {
+        return submissions.findByTaskIdOrderByCreatedAtDesc(taskId).stream().map(s -> map(s, auth)).toList();
     }
 
     @RolesAllowed({"TEACHER","ROLE_TEACHER"})
@@ -610,7 +707,7 @@ public class SubmissionController {
             var lesson = task == null ? null : task.getLesson();
             var student = s.getStudent();
             return new ClassSubmissionResponse(
-                    map(s),
+                    map(s, auth),
                     lesson == null ? null : lesson.getId(),
                     lesson == null ? null : lesson.getTitle(),
                     task == null ? null : task.getTitle(),
@@ -631,7 +728,7 @@ public class SubmissionController {
         if (!isTeacher && (callerId == null || !callerId.equals(s.getStudent().getId()))) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Brak uprawnień");
         }
-        return map(s);
+        return map(s, auth);
     }
 
     // ---------- Manual Grading ----------
@@ -654,17 +751,112 @@ public class SubmissionController {
         s.setGradedAt(Instant.now());
         s.setGradedBy(teacher);
         s = submissions.save(s);
-        return map(s);
+        return map(s, auth);
     }
 
     // ---------- Mapping ----------
 
-    private SubmissionResponse map(Submission s) {
+    private SubmissionResponse map(Submission s, Authentication auth) {
         Task task = s.getTask();
         Integer manualScore = s.getManualScore();
         Integer autoScore = s.getAutoScore();
         Integer points = s.getPoints();
         Integer effectiveScore = manualScore != null ? manualScore : (points != null ? points : autoScore);
+
+        // By default return stored testReport, but sanitize for non-teacher callers
+        String report = s.getTestReport();
+        String sanitizedReport = report;
+        boolean callerIsTeacher = false;
+        if (auth != null) {
+            var authNames = auth.getAuthorities().stream().map(a -> a.getAuthority()).toList();
+            callerIsTeacher = authNames.contains("TEACHER") || authNames.contains("ROLE_TEACHER");
+        }
+        if (!callerIsTeacher && report != null && !report.isBlank() && task != null) {
+            try {
+                var node = objectMapper.readTree(report);
+                com.fasterxml.jackson.databind.JsonNode testsNode = null;
+                boolean nodeWasArray = node.isArray();
+                testsNode = nodeWasArray ? node : node.get("tests");
+                if (testsNode != null && testsNode.isArray()) {
+                    var om = objectMapper;
+                    var filtered = om.createArrayNode();
+                    List<ProgrammingTestCase> cases = testRepo.findByTaskIdOrderByOrderAsc(task.getId());
+                    Map<java.util.UUID, Boolean> visibleById = new HashMap<>();
+                    for (var c : cases) visibleById.put(c.getId(), c.isVisible());
+                    int numCases = cases == null ? 0 : cases.size();
+                    for (int i = 0; i < testsNode.size(); i++) {
+                        var tnode = testsNode.get(i);
+                        var idNode = tnode.get("id");
+                        boolean keep = true;
+                        if (idNode != null && idNode.isTextual()) {
+                            try {
+                                java.util.UUID id = java.util.UUID.fromString(idNode.asText());
+                                Boolean vis = visibleById.get(id);
+                                if (vis != null && !vis.booleanValue()) keep = false;
+                            } catch (Exception ignored) { }
+                        } else {
+                            if (numCases > 0 && testsNode.size() == numCases) {
+                                ProgrammingTestCase tc = cases.get(i);
+                                if (tc != null && !tc.isVisible()) keep = false;
+                            }
+                        }
+                        if (keep) filtered.add(tnode);
+                    }
+                    if (nodeWasArray) {
+                        sanitizedReport = objectMapper.writeValueAsString(filtered);
+                    } else {
+                        ((com.fasterxml.jackson.databind.node.ObjectNode)node).set("tests", filtered);
+                        sanitizedReport = objectMapper.writeValueAsString(node);
+                    }
+                }
+            } catch (Exception ignored) { sanitizedReport = report; }
+        }
+
+        // Sanitize stored stdout for non-teacher callers as well
+        String stdoutVal = s.getStdout();
+        String sanitizedStdout = stdoutVal;
+        if (!callerIsTeacher && stdoutVal != null && task != null) {
+            try {
+                String trimmed = stdoutVal.trim();
+                java.util.List<java.util.Map<String,Object>> arr = null;
+                if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+                    arr = objectMapper.readValue(trimmed, java.util.List.class);
+                } else {
+                    int i = trimmed.lastIndexOf('[');
+                    if (i >= 0) {
+                        try { arr = objectMapper.readValue(trimmed.substring(i), java.util.List.class); } catch (Exception ignored) { arr = null; }
+                    }
+                }
+                if (arr != null) {
+                    var cases = testRepo.findByTaskIdOrderByOrderAsc(task.getId());
+                    Map<java.util.UUID, Boolean> visibleById = new HashMap<>();
+                    for (var c : cases) visibleById.put(c.getId(), c.isVisible());
+                    java.util.List<java.util.Map<String,Object>> outArr = new ArrayList<>();
+                    for (int idx = 0; idx < arr.size(); idx++) {
+                        java.util.Map<String,Object> item = arr.get(idx);
+                        boolean keep = true;
+                        Object idNode = item.get("id");
+                        java.util.UUID uid = null;
+                        if (idNode instanceof java.util.UUID) uid = (java.util.UUID) idNode;
+                        else if (idNode instanceof String) {
+                            try { uid = java.util.UUID.fromString((String) idNode); } catch(Exception ignored) { uid = null; }
+                        }
+                        if (uid != null) {
+                            Boolean vis = visibleById.get(uid);
+                            if (vis != null && !vis.booleanValue()) keep = false;
+                        } else {
+                            if (idx < cases.size()) {
+                                ProgrammingTestCase tc = cases.get(idx);
+                                if (tc != null && !tc.isVisible()) keep = false;
+                            }
+                        }
+                        if (keep) outArr.add(item);
+                    }
+                    sanitizedStdout = objectMapper.writeValueAsString(outArr);
+                }
+            } catch (Exception ignored) { sanitizedStdout = stdoutVal; }
+        }
+
         return new SubmissionResponse(
                 s.getId(),
                 task.getId(),
@@ -678,8 +870,8 @@ public class SubmissionController {
                 s.getCreatedAt(),
                 s.getCode(),
                 autoScore,
-                s.getStdout(),
-                s.getTestReport(),
+                sanitizedStdout,
+                sanitizedReport,
                 s.getAttemptNumber(),
                 manualScore,
                 s.getTeacherComment(),

@@ -1,5 +1,6 @@
 import React from 'react'
 import { api, type Role } from '../../api'
+import { ROLE_LABELS_PL } from '../../constants/roles'
 import { useAuth } from '../../hooks/useAuth'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../../components/Toasts'
@@ -82,8 +83,8 @@ export default function RegisterPage(){
 
                 <label htmlFor="reg-role">Rola</label>
                 <select id="reg-role" className="select" value={role} onChange={e=>setRole(e.target.value as Role)} aria-describedby="reg-role-hint">
-                        <option>STUDENT</option>
-                        <option>TEACHER</option>
+                        <option value="STUDENT">{ROLE_LABELS_PL.STUDENT}</option>
+                        <option value="TEACHER">{ROLE_LABELS_PL.TEACHER}</option>
                     </select>
                 <span id="reg-role-hint" className="text-muted" style={{fontSize:12}}>Wybierz swoją rolę.</span>
                 <div style={{display:'flex',gap:8}}>

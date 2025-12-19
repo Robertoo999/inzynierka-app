@@ -5,6 +5,8 @@ import { useToast } from './components/Toasts'
 import AppLayout from './layouts/AppLayout'
 import LoginPage from './pages/auth/LoginPage'
 import RegisterPage from './pages/auth/RegisterPage'
+import ForgotPassword from './pages/auth/ForgotPassword'
+import ResetPassword from './pages/auth/ResetPassword'
 import NotFound from './pages/NotFound'
 import StudentHome from './pages/student/Home'
 import TeacherHome from './pages/teacher/Home'
@@ -35,6 +37,8 @@ export default function App(){
                     <Route path="/" element={<RootRedirect/>} />
                     <Route path="/login" element={<LoginPage/>} />
                     <Route path="/register" element={<RegisterPage/>} />
+                    <Route path="/forgot-password" element={<ForgotPassword/>} />
+                    <Route path="/reset-password" element={<ResetPassword/>} />
                     {/* Student routes */}
                     <Route path="/student/*" element={<RequireAuth><RequireStudent><StudentHome/></RequireStudent></RequireAuth>} />
                     <Route path="/student/classes" element={<RequireAuth><RequireStudent><ClassesPage/></RequireStudent></RequireAuth>} />

@@ -30,6 +30,7 @@ function Modal({ open, onClose, children }:{ open:boolean; onClose:()=>void; chi
 // enhance Modal to update a global open-counter so parent modules can react (auto full-width)
 function ModalCountered({ open, onClose, children }:{ open:boolean; onClose:()=>void; children: React.ReactNode }){
     const [mounted, setMounted] = React.useState(false)
+    const innerRef = React.useRef<HTMLDivElement|null>(null)
     React.useEffect(()=>{
         // ensure global counter exists
         if ((window as any).__lessonModalCount == null) (window as any).__lessonModalCount = 0
@@ -38,6 +39,15 @@ function ModalCountered({ open, onClose, children }:{ open:boolean; onClose:()=>
             (window as any).__lessonModalCount = ((window as any).__lessonModalCount || 0) + 1
             try{ window.dispatchEvent(new CustomEvent('lesson:modal:count', { detail: { count: (window as any).__lessonModalCount } })) }catch{}
             setMounted(true)
+        }
+        // focus management and Esc handling
+        if (open) {
+            setTimeout(()=>{
+                try { innerRef.current?.focus() } catch {}
+            }, 10)
+            const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Escape') { ev.stopPropagation(); onClose() } }
+            window.addEventListener('keydown', onKey)
+            return ()=> window.removeEventListener('keydown', onKey)
         }
         return ()=>{
             if (mounted) {
@@ -50,7 +60,7 @@ function ModalCountered({ open, onClose, children }:{ open:boolean; onClose:()=>
     if (!open) return null
     return (
         <div role="dialog" aria-modal="true" style={{position:'fixed', inset:0, background:'rgba(0,0,0,.55)', display:'grid', placeItems:'center', zIndex:50}}>
-            <div style={{minWidth:360, maxWidth:900, width:'92%', background:'var(--panel)', border:'1px solid var(--line)', borderRadius:12, padding:16, maxHeight:'90vh', overflow:'auto'}}>
+            <div ref={innerRef} tabIndex={-1} style={{minWidth:360, maxWidth:900, width:'92%', background:'var(--panel)', border:'1px solid var(--line)', borderRadius:12, padding:16, maxHeight:'90vh', overflow:'auto'}}>
                 <div style={{display:'flex', justifyContent:'flex-end', marginBottom:8}}>
                     <button className="btn" style={btn} onClick={onClose} aria-label="Close">✕</button>
                 </div>
